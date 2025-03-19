@@ -15,12 +15,28 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       packages: write
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get version from package.json and create tag
+        if: github.ref == 'refs/heads/main'
+        run: |
+          # 从 package.json 获取版本号
+          VERSION=$(node -p "require('./package.json').version")
+          # 检查 tag 是否已存在
+          if ! git tag | grep -q "v$VERSION"; then
+            echo "Creating new tag v$VERSION"
+            git tag "v$VERSION"
+            git push origin "v$VERSION"
+          else
+            echo "Tag v$VERSION already exists"
+          fi
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -41,9 +57,7 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            # 为每次 push 到 main 分支生成 latest 标签
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
-            # 为版本标签生成对应的版本号标签
             type=semver,pattern={{version}},enable=${{ startsWith(github.ref, 'refs/tags/v') }}
             type=semver,pattern={{major}}.{{minor}},enable=${{ startsWith(github.ref, 'refs/tags/v') }}
 
@@ -52,6 +66,6 @@ jobs:
         with:
           context: .
           platforms: linux/amd64
-          push: ${{ github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) }}
+          push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }} 
